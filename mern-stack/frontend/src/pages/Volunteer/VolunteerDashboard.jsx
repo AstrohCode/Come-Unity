@@ -9,7 +9,7 @@ import favoriteIcon from "@/assets/Favorite.png";
 import dashboardIcon from "@/assets/dashboard.png";
 import selfCareImage from "@/assets/self care image 1.png";
 import nutritionImage from "@/assets/Untitled design 1.png";
-import foodBankImage from "@/assets/6 2.png";
+import foodBankImage from "@/assets/volunteer-default.png";
 import libraryImage from "@/assets/3 7.png";
 import diversityImage from "@/assets/5 6.png";
 import "./volunteer-dashboard.css";
