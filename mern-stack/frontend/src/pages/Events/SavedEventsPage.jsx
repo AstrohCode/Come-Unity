@@ -2,14 +2,13 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import VolunteerLayout from "@/pages/Events/layouts/VolunteerLayout";
 import EventCard from "@/pages/Events/EventCard";
+import api from "@/lib/api";
+import { mapEventsFromApi } from "@/utils/events";
 import logoClear from "@/assets/Logo (clear).png";
 import profileBadge from "@/assets/6 1.png";
 import calendarIcon from "@/assets/Calender image.png";
 import favoriteIcon from "@/assets/Favorite.png";
 import dashboardIcon from "@/assets/dashboard.png";
-import selfCareImage from "@/assets/self care image 1.png";
-import libraryImage from "@/assets/3 7.png";
-import nutritionImage from "@/assets/Untitled design 1.png";
 import "./saved-events.css";
 
 const volunteerNavLinks = [
@@ -28,42 +27,12 @@ const volunteerNavLinks = [
   },
 ];
 
-const mockSavedEvents = [
-  {
-    id: "evt-701",
-    title: "Community Garden Prep Day",
-    category: "Volunteer",
-    description: "Help tidy the raised beds and refresh soil before planting.",
-    slotsAvailable: 6,
-    slotsTotal: 24,
-    imageUrl: selfCareImage,
-    isSaved: true,
-  },
-  {
-    id: "evt-702",
-    title: "Riverfront Storytime",
-    category: "Education",
-    description: "Assist with crafts and story circles for early readers.",
-    slotsAvailable: 4,
-    slotsTotal: 18,
-    imageUrl: libraryImage,
-    isSaved: true,
-  },
-  {
-    id: "evt-703",
-    title: "Wellness Kit Assembly",
-    category: "Health",
-    description: "Assemble hygiene kits to distribute at local shelters.",
-    slotsAvailable: 10,
-    slotsTotal: 30,
-    imageUrl: nutritionImage,
-    isSaved: true,
-  },
-];
-
 export default function SavedEventsPage({ user, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState([]);
+  const [error, setError] = useState("");
+  const [pendingRemovalIds, setPendingRemovalIds] = useState([]);
+  const isVolunteer = user?.role ? user.role === "volunteer" : true;
 
   const navLinks = useMemo(
     () =>
@@ -76,20 +45,66 @@ export default function SavedEventsPage({ user, onLogout }) {
   );
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setEvents(mockSavedEvents);
-      setLoading(false);
-    }, 700);
-    return () => clearTimeout(timer);
-  }, []);
+    let isMounted = true;
 
-  const isVolunteer = user?.role ? user.role === "volunteer" : true;
+    const loadSavedEvents = async () => {
+      if (!isVolunteer) {
+        setLoading(false);
+        setEvents([]);
+        return;
+      }
+
+      setLoading(true);
+      setError("");
+      try {
+        const data = await api.get("/api/events/saved");
+        const normalized = mapEventsFromApi(data?.events).map((event) => ({
+          ...event,
+          isSaved: true,
+        }));
+        if (isMounted) {
+          setEvents(normalized);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError(err.message || "Unable to load saved events.");
+          setEvents([]);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadSavedEvents();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isVolunteer]);
+
   if (user && !isVolunteer) {
     return <Navigate to="/events" replace />;
   }
 
-  const handleUnsave = (eventId) => {
+  const handleUnsave = async (eventId) => {
+    if (!eventId) {
+      return;
+    }
+
+    setPendingRemovalIds((current) => Array.from(new Set([...current, eventId])));
+    const previousEvents = events;
     setEvents((current) => current.filter((event) => event.id !== eventId));
+
+    try {
+      await api.delete(`/api/events/${eventId}/save`);
+    } catch (err) {
+      setError(err.message || "Unable to update saved events.");
+      setEvents(previousEvents);
+    } finally {
+      setPendingRemovalIds((current) => current.filter((id) => id !== eventId));
+    }
   };
 
   const savedCount = events.length;
@@ -114,6 +129,12 @@ export default function SavedEventsPage({ user, onLogout }) {
           </div>
         </header>
 
+        {error && !loading && (
+          <div className="saved-events__error" role="alert">
+            {error}
+          </div>
+        )}
+
         {loading ? (
           <div className="saved-events__skeleton-grid">
             {Array.from({ length: 3 }).map((_, index) => (
@@ -130,8 +151,11 @@ export default function SavedEventsPage({ user, onLogout }) {
                     type="button"
                     className="saved-events__ghost saved-events__ghost--full"
                     onClick={() => handleUnsave(event.id)}
+                    disabled={pendingRemovalIds.includes(event.id)}
                   >
-                    Remove bookmark
+                    {pendingRemovalIds.includes(event.id)
+                      ? "Removing..."
+                      : "Remove bookmark"}
                   </button>
                 </div>
               </article>

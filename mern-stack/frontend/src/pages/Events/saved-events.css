@@ -43,6 +43,14 @@
   font-weight: 600;
 }
 
+.saved-events__error {
+  padding: 0.9rem 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(201, 64, 64, 0.3);
+  background: #fff6f6;
+  color: #9c1f1f;
+}
+
 .saved-events__grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -70,6 +78,11 @@
   cursor: pointer;
   text-align: center;
   width: 100%;
+}
+
+.saved-events__ghost:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .saved-events__ghost--full {
