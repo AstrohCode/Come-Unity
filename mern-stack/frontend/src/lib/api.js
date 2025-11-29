@@ -55,4 +55,5 @@ export default {
   request,
   get: (path) => request(path),
   post: (path, body) => request(path, { method: "POST", body }),
+  delete: (path) => request(path, { method: "DELETE" }),
 };

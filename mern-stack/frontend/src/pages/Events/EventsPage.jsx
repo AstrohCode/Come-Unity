@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "@/lib/api";
+import { mapEventsFromApi } from "@/utils/events";
 import EventCard from "./EventCard";
 import VolunteerLayout from "./layouts/VolunteerLayout";
 import OrganizerLayout from "./layouts/OrganizerLayout";
@@ -114,53 +115,6 @@ const Layouts = {
   admin: AdminLayout,
 };
 
-// Format API events so EventCard receives consistent props
-const mapEventsFromApi = (items) => {
-  if (!Array.isArray(items)) {
-    return [];
-  }
-
-  return items
-    .map((event, index) => {
-      if (!event || typeof event !== "object") {
-        return null;
-      }
-
-      const ownerValue = event.owner ?? event.ownerId ?? null;
-      const ownerId =
-        ownerValue && typeof ownerValue === "object"
-          ? ownerValue.id ?? ownerValue._id ?? null
-          : ownerValue ?? null;
-
-      const available =
-        typeof event.slotsAvailable === "number"
-          ? event.slotsAvailable
-          : typeof event.capacity === "number"
-          ? event.capacity
-          : 0;
-
-      const total =
-        typeof event.slotsTotal === "number"
-          ? event.slotsTotal
-          : typeof event.capacity === "number"
-          ? event.capacity
-          : available;
-
-      return {
-        id: String(event.id ?? event._id ?? `event-${index}`),
-        title: event.title ?? "Untitled Event",
-        category: event.category ?? "General",
-        description: event.description ?? "Details coming soon.",
-        imageUrl: event.imageUrl ?? event.image ?? "",
-        slotsAvailable: available,
-        slotsTotal: total,
-        ownerId: ownerId ? String(ownerId) : null,
-        status: event.status ?? "pending",
-      };
-    })
-    .filter(Boolean);
-};
-
 export default function EventsPage({ user, onLogout }) {
   const role = user?.role ?? "volunteer";
   const config = roleConfig[role] ?? roleConfig.volunteer;
@@ -174,6 +128,7 @@ export default function EventsPage({ user, onLogout }) {
   const [organizerToast, setOrganizerToast] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
+  const [savedEventIds, setSavedEventIds] = useState([]);
 
   const fetchEvents = useCallback(async () => {
     setLoading(true);
@@ -194,18 +149,44 @@ export default function EventsPage({ user, onLogout }) {
     fetchEvents();
   }, [fetchEvents]);
 
+  const fetchSavedEvents = useCallback(async () => {
+    if (role !== "volunteer") {
+      setSavedEventIds([]);
+      return;
+    }
+
+    try {
+      const data = await api.get("/api/events/saved");
+      const normalized = mapEventsFromApi(data?.events);
+      setSavedEventIds(normalized.map((event) => event.id));
+    } catch (err) {
+      console.error("[events fetchSavedEvents]", err);
+      setSavedEventIds([]);
+    }
+  }, [role]);
+
+  useEffect(() => {
+    fetchSavedEvents();
+  }, [fetchSavedEvents]);
+
+  const savedIdsSet = useMemo(() => new Set(savedEventIds), [savedEventIds]);
+  const decoratedEvents = useMemo(
+    () => events.map((event) => ({ ...event, isSaved: savedIdsSet.has(event.id) })),
+    [events, savedIdsSet]
+  );
+
   const categories = useMemo(
     () =>
       Array.from(
-        new Set(events.map((event) => event.category).filter(Boolean))
+        new Set(decoratedEvents.map((event) => event.category).filter(Boolean))
       ),
-    [events]
+    [decoratedEvents]
   );
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
 
   const filteredEvents = useMemo(() => {
-    return events.filter((event) => {
+    return decoratedEvents.filter((event) => {
       const matchesCategory = selectedCategory
         ? event.category === selectedCategory
         : true;
@@ -221,7 +202,7 @@ export default function EventsPage({ user, onLogout }) {
         .toLowerCase();
       return haystack.includes(normalizedQuery);
     });
-  }, [events, normalizedQuery, selectedCategory]);
+  }, [decoratedEvents, normalizedQuery, selectedCategory]);
 
   const hasResults = filteredEvents.length > 0;
 
@@ -233,6 +214,22 @@ export default function EventsPage({ user, onLogout }) {
     setEvents((current) => current.filter((event) => event.id !== eventItem.id));
     setOrganizerToast(`"${eventItem.title}" has been removed from the feed.`);
   };
+
+  const handleFavoriteToggle = useCallback((eventId, nextValue) => {
+    if (!eventId) {
+      return;
+    }
+
+    setSavedEventIds((current) => {
+      const set = new Set(current);
+      if (nextValue) {
+        set.add(eventId);
+      } else {
+        set.delete(eventId);
+      }
+      return Array.from(set);
+    });
+  }, []);
 
   const dismissOrganizerToast = () => setOrganizerToast("");
   const handleSearchChange = (event) => setSearchQuery(event.target.value);
@@ -327,7 +324,11 @@ export default function EventsPage({ user, onLogout }) {
                 const ownsEvent = Boolean(userId && event.ownerId === userId);
                 return (
                   <article key={event.id} className="events-grid__item">
-                    <EventCard event={event} showFavorite={config.showFavorites} />
+                    <EventCard
+                      event={event}
+                      showFavorite={config.showFavorites}
+                      onToggleFavorite={config.showFavorites ? handleFavoriteToggle : undefined}
+                    />
                     {isOrganizer && (
                       <>
                         <div className="events-card-meta">

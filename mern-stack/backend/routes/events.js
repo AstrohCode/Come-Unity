@@ -2,6 +2,7 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import { Event } from "../models/Event.js";
 import { Registration } from "../models/Registration.js";
+import { SavedEvent } from "../models/SavedEvent.js";
 import { auth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -13,6 +14,28 @@ router.get("/", async (req, res) => {
     return res.json({ events });
   } catch (err) {
     console.error("[events GET /] error", err);
+    return res.status(500).json({ error: { message: "Server error" } });
+  }
+});
+
+// GET /api/events/saved - list saved events for the volunteer
+router.get("/saved", auth, requireRole("volunteer"), async (req, res) => {
+  try {
+    const eventIds = await SavedEvent.find({ user: req.user.id }).distinct("event");
+    if (!eventIds.length) {
+      return res.json({ events: [] });
+    }
+
+    const events = await Event.find({
+      _id: { $in: eventIds },
+      status: "approved",
+    })
+      .sort({ date: 1 })
+      .lean();
+
+    return res.json({ events });
+  } catch (err) {
+    console.error("[events GET /saved] error", err);
     return res.status(500).json({ error: { message: "Server error" } });
   }
 });
@@ -164,6 +187,49 @@ router.delete("/:id/rsvp", auth, requireRole("volunteer"), async (req, res) => {
     return res.json({ message: "RSVP canceled", registration });
   } catch (err) {
     console.error("[events DELETE /:id/rsvp] error", err);
+    return res.status(500).json({ error: { message: "Server error" } });
+  }
+});
+
+// POST /api/events/:id/save - volunteers save an event
+router.post("/:id/save", auth, requireRole("volunteer"), async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const event = await Event.findById(id);
+    if (!event || event.status !== "approved") {
+      return res.status(404).json({ error: { message: "Event not found" } });
+    }
+
+    const existing = await SavedEvent.findOne({ user: req.user.id, event: id });
+    if (existing) {
+      return res.json({ savedEvent: existing });
+    }
+
+    const savedEvent = await SavedEvent.create({ user: req.user.id, event: id });
+    return res.status(201).json({ savedEvent });
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(400).json({ error: { message: "Event already saved" } });
+    }
+    console.error("[events POST /:id/save] error", err);
+    return res.status(500).json({ error: { message: "Server error" } });
+  }
+});
+
+// DELETE /api/events/:id/save - volunteers remove saved event
+router.delete("/:id/save", auth, requireRole("volunteer"), async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const savedEvent = await SavedEvent.findOneAndDelete({ user: req.user.id, event: id });
+    if (!savedEvent) {
+      return res.status(404).json({ error: { message: "Saved event not found" } });
+    }
+
+    return res.json({ message: "Event removed from saved list", savedEvent });
+  } catch (err) {
+    console.error("[events DELETE /:id/save] error", err);
     return res.status(500).json({ error: { message: "Server error" } });
   }
 });

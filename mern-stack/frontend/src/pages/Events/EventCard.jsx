@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { FaHeart, FaRegHeart } from "react-icons/fa";
+import api from "@/lib/api";
 import "./events.css";
 
 export default function EventCard({
@@ -28,6 +29,7 @@ export default function EventCard({
   const categoryLabel = category ?? "General";
   const categorySlug = categoryLabel.toLowerCase().replace(/\s+/g, "-");
   const [saved, setSaved] = useState(Boolean(isSaved));
+  const [savingFavorite, setSavingFavorite] = useState(false);
   const safeTitle = title ?? "Event details";
   const safeDescription = description ?? "More details coming soon.";
 
@@ -35,11 +37,29 @@ export default function EventCard({
     setSaved(Boolean(isSaved));
   }, [isSaved]);
 
-  const handleToggleFavorite = () => {
+  const handleToggleFavorite = async () => {
+    if (!eventId || savingFavorite) {
+      return;
+    }
+
     const nextValue = !saved;
     setSaved(nextValue);
-    if (onToggleFavorite) {
-      onToggleFavorite(eventId || null, nextValue);
+    setSavingFavorite(true);
+
+    try {
+      if (nextValue) {
+        await api.post(`/api/events/${eventId}/save`);
+      } else {
+        await api.delete(`/api/events/${eventId}/save`);
+      }
+      if (onToggleFavorite) {
+        onToggleFavorite(eventId || null, nextValue);
+      }
+    } catch (err) {
+      console.error("[EventCard] Unable to toggle save", err);
+      setSaved(!nextValue);
+    } finally {
+      setSavingFavorite(false);
     }
   };
 
@@ -75,6 +95,7 @@ export default function EventCard({
             }
             aria-pressed={saved}
             title={saved ? "Saved to your events" : "Save this event"}
+            disabled={savingFavorite}
           >
             {saved ? <FaHeart /> : <FaRegHeart />}
           </button>
